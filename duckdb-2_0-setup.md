@@ -1,100 +1,158 @@
-Use your **current environment**. Do not run `uv venv`.
+Pin DuckDB with an explicit pre-release specifier and allow pre-releases **only for that package**. That is the current uv-supported way to land `2.0.0.dev*` without opening every other dependency to alphas. Latest 2.0 wheel on PyPI as of 12 Sep 2026 is `2.0.0.dev2609121639`. Official install path is still `duckdb --pre`.
 
-DuckDB 2.0 is still a **pre-release**. uv ignores pre-releases unless you allow them. Official package command remains `duckdb --pre`.
+Replace your workspace `pyproject.toml` with this:
 
----
+```toml
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-### 1. Upgrade DuckDB in the env you already have
+[project]
+name = "daily-projected"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
 
-In PowerShell, from the project/folder that already uses this Python:
+dependencies = [
+    # --- core dataframe / arrays -------------------------------------------------
+    "polars[pyarrow]",
+    "pyarrow",
+    "numpy",
+    "python-dateutil",
+    # --- machine learning --------------------------------------------------------
+    "lightgbm",
+    "scikit-learn",
+    # --- visualization -----------------------------------------------------------
+    "plotly",
+    "matplotlib",
+    "seaborn",
+    "plotnine",
+    "vl-convert-python",
+    # --- snowflake ---------------------------------------------------------------
+    "snowflake-snowpark-python",
+    "snowflake-connector-python[secure-local-storage]",
+    "snowflake-sqlalchemy",
+    # --- duckdb / sql ------------------------------------------------------------
+    # 2.0 is preview (Cyanoptera). Explicit .dev pin is required so uv
+    # will take 2.0.0.dev* instead of stable 1.5.5.
+    "duckdb>=2.0.0.dev0",
+    "duckdb-engine",
+    "sqlalchemy",
+    # --- notebooks (marimo-first) ------------------------------------------------
+    "marimo[recommended,sql]",
+    "ipython",
+    "ipywidgets",
+    # --- cli / io / platform -----------------------------------------------------
+    "rich",
+    "pyyaml",
+    "holidays",
+    "xlsxwriter",
+    "azure-functions",
+    "shiny>=1.7.0",
+]
 
-```powershell
-python -c "import sys,duckdb; print(sys.executable); print(duckdb.__version__)"
+[project.scripts]
+dpwo-export = "dpwo.cli.commands.snowflake_to_local:main"
+dpwo-predict = "dpwo.cli.commands.predict_to_local:main"
+dpwo-nav = "dpwo.cli.nav:main"
+dpwo-studio = "dpwo.studio.launch:main"
+dpwo-migrate-bill-cycle = "dpwo.cli.commands.migrate_bill_cycle_parquet:main"
+
+[dependency-groups]
+dev = [
+    "ipykernel",
+    "pytest",
+    "ruff",
+    "mypy",
+    "types-pyyaml",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dpwo"]
+
+[tool.uv]
+# Allow pre-releases for DuckDB only. Everything else stays on stables.
+prerelease-package = { duckdb = "allow" }
+
+[tool.ruff]
+target-version = "py312"
+line-length = 99
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["dpwo"]
+
+[tool.ruff.lint.per-file-ignores]
+"notebooks/*.py" = ["B018", "F841"]
+"apps/*.py" = ["B018", "F841"]
+
+[tool.pytest.ini_options]
+testpaths = ["src/scripts/tests"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src/dpwo"]
+ignore_missing_imports = true
+
+[tool.marimo.display]
+custom_css = ["src/config/marimo_brand.css"]
+
+[tool.marimo.formatting]
+line_length = 199
+
+[tool.marimo.package_management]
+manager = "uv"
+
+[tool.marimo.runtime]
+default_sql_output = "polars"
+
+[tool.marimo.datasources]
+auto_discover_schemas = "auto"
+auto_discover_tables = "auto"
+auto_discover_columns = false
 ```
 
-Then install 2.0 into **that same interpreter**:
+### Create the new workspace `.venv`
+
+In the project root (same folder as this file):
 
 ```powershell
-uv pip install --python (Get-Command python).Source --upgrade --prerelease allow duckdb
+# optional: keep the old env so 1.5.4 work is recoverable
+if (Test-Path .venv) { Rename-Item .venv .venv-15 }
+
+uv lock --upgrade-package duckdb
+uv sync --group dev
 ```
 
-If that env already has `VIRTUAL_ENV` set (existing `.venv` activated), this is enough:
-
-```powershell
-uv pip install --upgrade --prerelease allow duckdb
-```
-
-If this is a **uv project** (`pyproject.toml` present) and you want the lockfile updated too:
-
-```powershell
-uv add --active --prerelease allow --upgrade-package duckdb "duckdb>=2.0.0.dev0"
-```
-
-`--active` targets the env you are already using. It does not create a new one.
+`uv sync` creates `.venv` from this project. Do not run `uv venv` first unless you want an empty env.
 
 Confirm:
 
 ```powershell
-python -c "import duckdb; print(duckdb.__version__)"
+uv run python -c "import duckdb; print(duckdb.__version__); print(getattr(duckdb,'version',lambda: None)())"
 ```
 
-You want `2.0.0.dev…`, not `1.5.4`.
+Expect `2.0.0.dev…` / `2.0.0-alpha…`, not `1.5.4`.
 
-Marimo can stay as-is if it is already installed. If SQL cells break after the swap:
+### `.duckdb` files
 
-```powershell
-uv pip install --upgrade --prerelease allow "marimo[sql]" "polars[pyarrow]"
-```
-
----
-
-### 2. Upgrade the `.duckdb` files
-
-v2.0’s default storage is **v2.0.0**. 2.0 should **read** 1.5.4 files. It will **not** rewrite them in place. Files written with v2 storage will not open in 1.5.4. Copy first.
+2.0 can read 1.5.4 files. It does not rewrite them in place. New files use storage v2.0.0 and will not open in 1.5.4. Copy first, then convert:
 
 ```powershell
-copy C:\data\my.duckdb C:\data\my.duckdb.bak
-copy C:\data\my.duckdb C:\data\my_v2.duckdb
-```
-
-Convert the copy (not the original):
-
-```powershell
-python -c @"
+uv run python -c @"
 import duckdb
 con = duckdb.connect()
-con.execute(r""ATTACH 'C:\data\my.duckdb.bak' AS old (READ_ONLY)"")
+con.execute(r""ATTACH 'C:\data\my.duckdb' AS old (READ_ONLY)"")
 con.execute(r""ATTACH 'C:\data\my_v2.duckdb' AS new"")
 con.execute('COPY FROM DATABASE old TO new')
 print(con.execute('SELECT database_name, tags FROM duckdb_databases()').fetchall())
 "@
 ```
 
-Point Marimo / Python at `my_v2.duckdb`:
+Point Marimo at `my_v2.duckdb`. Keep the 1.5.4 original until your Snowflake-derived queries pass.
 
-```python
-import duckdb
-conn = duckdb.connect(r"C:\data\my_v2.duckdb")
-```
-
-If `COPY FROM DATABASE` fails on this alpha, use export/import against an **empty** target file:
-
-```powershell
-python -c @"
-import duckdb
-old = duckdb.connect(r'C:\data\my.duckdb.bak', read_only=True)
-old.execute(r""EXPORT DATABASE 'C:\data\duckdb_export'"")
-new = duckdb.connect(r'C:\data\my_v2.duckdb')
-new.execute(r""IMPORT DATABASE 'C:\data\duckdb_export'"")
-"@
-```
-
----
-
-### 3. Rollback the package only
-
-```powershell
-uv pip install --python (Get-Command python).Source "duckdb==1.5.4"
-```
-
-Keep `my.duckdb.bak` until you have run your real Snowflake-derived queries on the v2 file. Preview builds are not production-stable. Official 2.0.0 is still scheduled for 21 Oct 2026.
+If `uv sync` fails on `duckdb-engine`, drop that line temporarily and use `duckdb.connect()` directly. That package last published `0.17.0` in Mar 2025 and is not guaranteed against DuckDB 2.0.
