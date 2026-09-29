@@ -14,10 +14,10 @@ Stack: DuckDB → Arrow → Polars → Dash Cytoscape. No pandas.
 pip install dash dash-cytoscape duckdb polars pyarrow
 ```
 
-In `dash_cytoscape_family_explorer.py` set `DB_PATH` to your `.duckdb` file.
+In `attom-explorer-tobr.py` set `DB_PATH` to your `.duckdb` file.
 
 ```bash
-python dash_cytoscape_family_explorer.py
+python attom-explorer-tobr.py
 ```
 
 Open `http://127.0.0.1:8050`.
@@ -36,7 +36,7 @@ Open `http://127.0.0.1:8050`.
 Controls:
 
 - **Family** — Phase 2 WCC id (`family_size` 2–800)
-- **As-of date** — occupancy snapshot; each `sub_id` must have one BAN
+- **As-of date** — temporal snapshot; each `sub_id` must have one BAN
 - **Lookback (days)** — only draw transfers with `window_start < transfer_dt <= as_of`
 
 ---
@@ -54,7 +54,7 @@ Defaults:
 | `from_account` / `to_account` | `from_ban` / `to_ban` | Transfer of Billing Responsibility (TOBR) endpoints |
 | `start_dt` / `end_dt` | `start_dt` / `end_dt` | Occupancy interval |
 | `tobr_dt` | `tobr_dt` | Date the sub changed BAN |
-| `tobr_occupancy` | `subscriber_occupancy` | Time dimension |
+| `tobr_temporal` | `sub_id_temporal` | Time dimension |
 | `tobr_family` | `ban_family` | Family membership |
 | `tobr_edges` | `tobr_edge` | Directed moves |
 
@@ -66,7 +66,7 @@ If your subscriber column is still `ctn`, set `"line": "ctn"`. Do not change the
 
 Intervals are half-open: `start_dt <= as_of < end_dt`. Current stays use `end_dt = 9999-12-31`.
 
-### `subscriber_occupancy` (required for time)
+### `sub_id_temporal` (required for time)
 
 Grain: one stay of one `sub_id` on one BAN.
 
@@ -88,7 +88,7 @@ Grain: one `sub_id` movement.
 | BAN1001 | BAN5520 | 4695550144 | 2025-01-12 |
 | BAN0882 | BAN2044 | 2145550188 | 2025-06-20 |
 
-`tobr_dt` should equal the destination occupancy `start_dt`.
+`tobr_dt` should equal the destination temporal `start_dt`.
 
 ### `ban_family` (required)
 
@@ -114,16 +114,16 @@ Family 0 is drawable. Family 1 is a singleton and is omitted from the dropdown.
 ```sql
 -- must return 0 rows for a valid as-of date
 SELECT sub_id
-FROM subscriber_occupancy
+FROM sub_id_temporal
 WHERE start_dt <= DATE '2025-06-01'
   AND end_dt   >  DATE '2025-06-01'
 GROUP BY sub_id
 HAVING count(DISTINCT ban) > 1;
 ```
 
-The UI prints that count. If it is not 0, occupancy intervals overlap and the snapshot is unsafe.
+The UI prints that count. If it is not 0, temporal intervals overlap and the snapshot is unsafe.
 
-Build occupancy from Phase 1. Derive `tobr_edge` from consecutive stays of the same `sub_id` where `ban` changes.
+Build temporal from Phase 1. Derive `tobr_edge` from consecutive stays of the same `sub_id` where `ban` changes.
 
 ---
 
@@ -134,6 +134,6 @@ Build occupancy from Phase 1. Derive `tobr_edge` from consecutive stays of the s
 1. On BAN1001 from 2022-01-15 to 2025-03-09  
 2. Moves to BAN2044 on 2025-03-09  
 3. As-of 2025-06-01, lookback 365 days → one arrow BAN1001 → BAN2044  
-4. Click BAN2044 → occupancy table shows 2145550101 live on that date  
+4. Click BAN2044 → temporal table shows 2145550101 live on that date  
 
-That is the time dimension. The family graph is still BAN–BAN; `sub_id` is the payload on the edge and on the occupancy table.
+That is the time dimension. The family graph is still BAN–BAN; `sub_id` is the payload on the edge and on the temporal table.
