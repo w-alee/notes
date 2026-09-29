@@ -54,7 +54,7 @@ Defaults:
 | `from_account` / `to_account` | `from_ban` / `to_ban` | Transfer of Billing Responsibility (TOBR) endpoints |
 | `start_dt` / `end_dt` | `start_dt` / `end_dt` | Occupancy interval |
 | `tobr_dt` | `tobr_dt` | Date the sub changed BAN |
-| `tobr_temporal` | `sub_id_temporal` | Time dimension |
+| `tobr_temporal` | `sub_temporal` | Time dimension |
 | `tobr_family` | `ban_family` | Family membership |
 | `tobr_edges` | `tobr_edge` | Directed moves |
 
@@ -66,7 +66,7 @@ If your subscriber column is still `ctn`, set `"line": "ctn"`. Do not change the
 
 Intervals are half-open: `start_dt <= as_of < end_dt`. Current stays use `end_dt = 9999-12-31`.
 
-### `sub_id_temporal` (required for time)
+### `sub_temporal` (required for time)
 
 Grain: one stay of one `sub_id` on one BAN.
 
@@ -114,7 +114,7 @@ Family 0 is drawable. Family 1 is a singleton and is omitted from the dropdown.
 ```sql
 -- must return 0 rows for a valid as-of date
 SELECT sub_id
-FROM sub_id_temporal
+FROM sub_temporal
 WHERE start_dt <= DATE '2025-06-01'
   AND end_dt   >  DATE '2025-06-01'
 GROUP BY sub_id
