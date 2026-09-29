@@ -37,7 +37,7 @@ Controls:
 
 - **Family** — Phase 2 WCC id (`family_size` 2–800)
 - **As-of date** — temporal snapshot; each `sub_id` must have one BAN
-- **Lookback (days)** — only draw transfers with `window_start < transfer_dt <= as_of`
+- **Lookback (days)** — only draw transfers with `window_start < dt_tobr <= as_of`
 
 ---
 
@@ -52,7 +52,7 @@ Defaults:
 | `account` | `ban` | Account / BAN |
 | `line` | `sub_id` | Subscriber |
 | `from_account` / `to_account` | `from_ban` / `to_ban` | Transfer of Billing Responsibility (TOBR) endpoints |
-| `start_dt` / `end_dt` | `start_dt` / `end_dt` | Occupancy interval |
+| `dt_eff` / `dt_end` | `dt_eff` / `dt_end` | Occupancy interval |
 | `tobr_dt` | `tobr_dt` | Date the sub changed BAN |
 | `tobr_temporal` | `sub_temporal` | Time dimension |
 | `tobr_family` | `ban_family` | Family membership |
@@ -64,13 +64,13 @@ If your subscriber column is still `ctn`, set `"line": "ctn"`. Do not change the
 
 ## 4. Tables and samples
 
-Intervals are half-open: `start_dt <= as_of < end_dt`. Current stays use `end_dt = 9999-12-31`.
+Intervals are half-open: `dt_eff <= as_of < dt_end`. Current stays use `dt_end = 9999-12-31`.
 
 ### `sub_temporal` (required for time)
 
 Grain: one stay of one `sub_id` on one BAN.
 
-| sub_id | ban | start_dt | end_dt |
+| sub_id | ban | dt_eff | dt_end |
 |---|---|---|---|
 | 2145550101 | BAN1001 | 2022-01-15 | 2025-03-09 |
 | 2145550101 | BAN2044 | 2025-03-09 | 9999-12-31 |
@@ -82,13 +82,13 @@ Same `sub_id` on two BANs **over time**. On 2025-01-01 it is only on BAN1001. On
 
 Grain: one `sub_id` movement.
 
-| from_ban | to_ban | sub_id | transfer_dt |
+| from_ban | to_ban | sub_id | dt_tobr |
 |---|---|---|---|
 | BAN1001 | BAN2044 | 2145550101 | 2025-03-09 |
 | BAN1001 | BAN5520 | 4695550144 | 2025-01-12 |
 | BAN0882 | BAN2044 | 2145550188 | 2025-06-20 |
 
-`tobr_dt` should equal the destination temporal `start_dt`.
+`tobr_dt` should equal the destination temporal `dt_eff`.
 
 ### `ban_family` (required)
 
@@ -115,8 +115,8 @@ Family 0 is drawable. Family 1 is a singleton and is omitted from the dropdown.
 -- must return 0 rows for a valid as-of date
 SELECT sub_id
 FROM sub_temporal
-WHERE start_dt <= DATE '2025-06-01'
-  AND end_dt   >  DATE '2025-06-01'
+WHERE dt_eff <= DATE '2025-06-01'
+  AND dt_end   >  DATE '2025-06-01'
 GROUP BY sub_id
 HAVING count(DISTINCT ban) > 1;
 ```
