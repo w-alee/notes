@@ -1,39 +1,98 @@
-I’ll add sample tables and a single config block so table and column names can be changed without editing query logic.The explorer now has one `SCHEMA` map and explicit 3-row samples. Change physical names there only. Do not edit the SQL.
+# Transfer family explorer — instructions
 
-## What you change
+Nodes are **BANs**. Edges are **sub_id moves**. Time is an **as-of date**.
 
-At the top of the file:
+A `sub_id` can sit on many BANs across history. On any one date it sits on exactly one BAN.
 
-```python
-SCHEMA: dict[str, str] = {
-    "t_family": "ban_family",
-    "t_edges": "transfer_edge",
-    "account": "ban",
-    "from_account": "from_ban",
-    "to_account": "to_ban",
-    "line": "ctn",
-    ...
-}
+Stack: DuckDB → Arrow → Polars → Dash Cytoscape. No pandas.
+
+---
+
+## 1. Install and run
+
+```bash
+pip install dash dash-cytoscape duckdb polars pyarrow
 ```
 
-Left key = logical name the app uses. Right value = column or table name in DuckDB.
+In `dash_cytoscape_family_explorer.py` set `DB_PATH` to your `.duckdb` file.
 
-If BAN is `account_id` and CTN is `subscriber_id`:
-
-```python
-"t_family": "account_family",
-"account": "account_id",
-"from_account": "from_account",
-"to_account": "to_account",
-"line": "subscriber_id",
+```bash
+python dash_cytoscape_family_explorer.py
 ```
 
-Python still talks about `account` and `line`. DuckDB is queried with your names.
+Open `http://127.0.0.1:8050`.
 
-## Tables the app expects
+---
 
-**Required — `t_family` (default `ban_family`)**  
-One row per account.
+## 2. What the picture means
+
+| Shape | Meaning |
+|---|---|
+| Node | One BAN (account) |
+| Arrow A → B | At least one `sub_id` transferred from BAN A to BAN B in the lookback window ending on the as-of date |
+| Red / larger node | That BAN has current-window equipment write-off dollars |
+| Click a node | `sub_id`s **on that BAN as of the selected date**, plus installment lineage |
+
+Controls:
+
+- **Family** — Phase 2 WCC id (`family_size` 2–800)
+- **As-of date** — occupancy snapshot; each `sub_id` must have one BAN
+- **Lookback (days)** — only draw transfers with `window_start < transfer_dt <= as_of`
+
+---
+
+## 3. Naming
+
+Edit only the `SCHEMA` dict. Left = logical name. Right = DuckDB name.
+
+Defaults:
+
+| Logical | Physical default | Role |
+|---|---|---|
+| `account` | `ban` | Account / BAN |
+| `line` | `sub_id` | Subscriber |
+| `from_account` / `to_account` | `from_ban` / `to_ban` | Transfer endpoints |
+| `start_dt` / `end_dt` | `start_dt` / `end_dt` | Occupancy interval |
+| `transfer_dt` | `transfer_dt` | Date the sub changed BAN |
+| `t_occupancy` | `subscriber_occupancy` | Time dimension |
+| `t_family` | `ban_family` | Family membership |
+| `t_edges` | `transfer_edge` | Directed moves |
+
+If your subscriber column is still `ctn`, set `"line": "ctn"`. Do not change the rest of the file.
+
+---
+
+## 4. Tables and samples
+
+Intervals are half-open: `start_dt <= as_of < end_dt`. Current stays use `end_dt = 9999-12-31`.
+
+### `subscriber_occupancy` (required for time)
+
+Grain: one stay of one `sub_id` on one BAN.
+
+| sub_id | ban | start_dt | end_dt |
+|---|---|---|---|
+| 2145550101 | BAN1001 | 2022-01-15 | 2025-03-09 |
+| 2145550101 | BAN2044 | 2025-03-09 | 9999-12-31 |
+| 5125550199 | BAN3309 | 2023-06-01 | 9999-12-31 |
+
+Same `sub_id` on two BANs **over time**. On 2025-01-01 it is only on BAN1001. On 2025-06-01 it is only on BAN2044.
+
+### `transfer_edge` (required)
+
+Grain: one `sub_id` movement.
+
+| from_ban | to_ban | sub_id | transfer_dt |
+|---|---|---|---|
+| BAN1001 | BAN2044 | 2145550101 | 2025-03-09 |
+| BAN1001 | BAN5520 | 4695550144 | 2025-01-12 |
+| BAN0882 | BAN2044 | 2145550188 | 2025-06-20 |
+
+`transfer_dt` should equal the destination occupancy `start_dt`.
+
+### `ban_family` (required)
+
+Grain: one BAN.
 
 | ban | family_id | family_size |
 |---|---|---|
@@ -41,39 +100,40 @@ One row per account.
 | BAN2044 | 0 | 4 |
 | BAN3309 | 1 | 1 |
 
-BAN1001 and BAN2044 are in the same family. BAN3309 is a singleton and will not appear in the dropdown (`family_size` must be 2–800).
+Family 0 is drawable. Family 1 is a singleton and is omitted from the dropdown.
 
-**Required — `t_edges` (default `transfer_edge`)**  
-One row per line move.
+### Optional
 
-| from_ban | to_ban | ctn |
-|---|---|---|
-| BAN1001 | BAN2044 | 2145550101 |
-| BAN1001 | BAN5520 | 4695550144 |
-| BAN0882 | BAN2044 | 2145550188 |
+`ban_centrality` — `ban`, `in_degree`, `out_degree`, `eq_wo_amt_current`  
+`wo_lineage` — installment path rows keyed by `originated_ban` / `chargeoff_ban` / `sub_id`
 
-Those three edges are what the canvas draws as arrows.
+---
 
-**Optional — `t_centrality` (default `ban_centrality`)**
+## 5. Time rule (do not violate)
 
-| ban | in_degree | out_degree | eq_wo_amt_current |
-|---|---|---|---|
-| BAN2044 | 2 | 0 | 1268.14 |
-| BAN1001 | 0 | 2 | 0.00 |
-| BAN0882 | 0 | 1 | 0.00 |
+```sql
+-- must return 0 rows for a valid as-of date
+SELECT sub_id
+FROM subscriber_occupancy
+WHERE start_dt <= DATE '2025-06-01'
+  AND end_dt   >  DATE '2025-06-01'
+GROUP BY sub_id
+HAVING count(DISTINCT ban) > 1;
+```
 
-BAN2044 is red and larger because of write-off dollars. Missing table → all nodes grey, degrees 0.
+The UI prints that count. If it is not 0, occupancy intervals overlap and the snapshot is unsafe.
 
-**Optional — `t_lineage` (default `wo_lineage`)**
+Build occupancy from Phase 1. Derive `transfer_edge` from consecutive stays of the same `sub_id` where `ban` changes.
 
-| installment_id | ctn | path_type | eq_type | orig_dt | wo_dt | wo_amt | originated_ban | chargeoff_ban | hop_count | window |
-|---|---|---|---|---|---|---|---|---|---|---|
-| EIP88101 | 2145550101 | moved_eip | PHONE | 2024-12-20 | 2025-11-02 | 870.14 | BAN1001 | BAN2044 | 1 | current_12m |
-| EIP88102 | 2145550101 | new_eip_after_transfer | WATCH | 2025-04-01 | 2025-11-02 | 398.00 | BAN2044 | BAN2044 | 1 | current_12m |
-| EIP77011 | 5125550199 | singleton | PHONE | 2023-06-01 | 2025-08-14 | 210.00 | BAN3309 | BAN3309 | 0 | prior_12m |
+---
 
-Click BAN2044 → first two rows. `window = current_12m` is what sizes/colors nodes and ranks the family dropdown.
+## 6. How to read one example
 
-## Still Polars-only
+`sub_id` 2145550101:
 
-DuckDB results go through Arrow into Polars. The click table uses `to_dicts()`. There is no pandas import.
+1. On BAN1001 from 2022-01-15 to 2025-03-09  
+2. Moves to BAN2044 on 2025-03-09  
+3. As-of 2025-06-01, lookback 365 days → one arrow BAN1001 → BAN2044  
+4. Click BAN2044 → occupancy table shows 2145550101 live on that date  
+
+That is the time dimension. The family graph is still BAN–BAN; `sub_id` is the payload on the edge and on the occupancy table.
