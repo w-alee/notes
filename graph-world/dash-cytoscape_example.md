@@ -1,4 +1,4 @@
-# Transfer family explorer — instructions
+# Transfer of Billing Responsibility (TOBR) family explorer — instructions
 
 Nodes are **BANs**. Edges are **sub_id moves**. Time is an **as-of date**.
 
@@ -51,12 +51,12 @@ Defaults:
 |---|---|---|
 | `account` | `ban` | Account / BAN |
 | `line` | `sub_id` | Subscriber |
-| `from_account` / `to_account` | `from_ban` / `to_ban` | Transfer endpoints |
+| `from_account` / `to_account` | `from_ban` / `to_ban` | Transfer of Billing Responsibility (TOBR) endpoints |
 | `start_dt` / `end_dt` | `start_dt` / `end_dt` | Occupancy interval |
-| `transfer_dt` | `transfer_dt` | Date the sub changed BAN |
-| `t_occupancy` | `subscriber_occupancy` | Time dimension |
-| `t_family` | `ban_family` | Family membership |
-| `t_edges` | `transfer_edge` | Directed moves |
+| `tobr_dt` | `tobr_dt` | Date the sub changed BAN |
+| `tobr_occupancy` | `subscriber_occupancy` | Time dimension |
+| `tobr_family` | `ban_family` | Family membership |
+| `tobr_edges` | `tobr_edge` | Directed moves |
 
 If your subscriber column is still `ctn`, set `"line": "ctn"`. Do not change the rest of the file.
 
@@ -78,7 +78,7 @@ Grain: one stay of one `sub_id` on one BAN.
 
 Same `sub_id` on two BANs **over time**. On 2025-01-01 it is only on BAN1001. On 2025-06-01 it is only on BAN2044.
 
-### `transfer_edge` (required)
+### `tobr_edge` (required)
 
 Grain: one `sub_id` movement.
 
@@ -88,7 +88,7 @@ Grain: one `sub_id` movement.
 | BAN1001 | BAN5520 | 4695550144 | 2025-01-12 |
 | BAN0882 | BAN2044 | 2145550188 | 2025-06-20 |
 
-`transfer_dt` should equal the destination occupancy `start_dt`.
+`tobr_dt` should equal the destination occupancy `start_dt`.
 
 ### `ban_family` (required)
 
@@ -123,7 +123,7 @@ HAVING count(DISTINCT ban) > 1;
 
 The UI prints that count. If it is not 0, occupancy intervals overlap and the snapshot is unsafe.
 
-Build occupancy from Phase 1. Derive `transfer_edge` from consecutive stays of the same `sub_id` where `ban` changes.
+Build occupancy from Phase 1. Derive `tobr_edge` from consecutive stays of the same `sub_id` where `ban` changes.
 
 ---
 
