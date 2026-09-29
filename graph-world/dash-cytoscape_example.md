@@ -1,56 +1,79 @@
-I’ll write a Dash-Cytoscape app that reads DuckDB through Polars only, then give setup and run steps.The family-options loader has a leftover parameterized query. I’ll remove it so the app stays pandas-free and runnable.Use **Dash Cytoscape** as the UI and **DuckDB → Arrow → Polars** as the data path. Do not import pandas. `dash_table` accepts Polars `to_dicts()` directly.
+I’ll add sample tables and a single config block so table and column names can be changed without editing query logic.The explorer now has one `SCHEMA` map and explicit 3-row samples. Change physical names there only. Do not edit the SQL.
 
-The app is in `dash_cytoscape_family_explorer.py`. It loads a Phase 2 family, draws directed transfer edges, colors write-off BANs red, and shows `wo_lineage` when you click a node.
+## What you change
 
-## 1. Install
-
-```bash
-pip install dash dash-cytoscape duckdb polars pyarrow
-```
-
-Do not install pandas for this app. DuckDB returns Arrow; Polars consumes Arrow.
-
-## 2. Prerequisites in DuckDB
-
-The script expects these Phase 1–3 tables in `your_extract.duckdb`:
-
-- `ban_family`
-- `transfer_edge`
-- `ban_centrality` (optional; in/out degree and WO dollars fall back to 0)
-- `wo_lineage` (optional for the click table; dropdown still works)
-
-Change `DB_PATH` at the top of the file to your `.duckdb` path.
-
-## 3. How data is loaded (no pandas)
+At the top of the file:
 
 ```python
-def query_pl(con, sql: str) -> pl.DataFrame:
-    return pl.from_arrow(con.execute(sql).arrow())
+SCHEMA: dict[str, str] = {
+    "t_family": "ban_family",
+    "t_edges": "transfer_edge",
+    "account": "ban",
+    "from_account": "from_ban",
+    "to_account": "to_ban",
+    "line": "ctn",
+    ...
+}
 ```
 
-Use `iter_rows(named=True)` or `to_dicts()` when Dash needs Python objects. Never call `.df()`.
+Left key = logical name the app uses. Right value = column or table name in DuckDB.
 
-## 4. Run
+If BAN is `account_id` and CTN is `subscriber_id`:
 
-```bash
-python dash_cytoscape_family_explorer.py
+```python
+"t_family": "account_family",
+"account": "account_id",
+"from_account": "from_account",
+"to_account": "to_account",
+"line": "subscriber_id",
 ```
 
-Open `http://127.0.0.1:8050`.
+Python still talks about `account` and `line`. DuckDB is queried with your names.
 
-- Dropdown lists families of size 2–800, largest current-window equipment WO first.
-- Red node = current-window equipment write-off on that BAN.
-- Arrow = at least one CTN moved `from_ban → to_ban`.
-- Click a BAN to see degree, WO dollars, and lineage rows.
+## Tables the app expects
 
-## 5. Why the node cap exists
+**Required — `t_family` (default `ban_family`)**  
+One row per account.
 
-Cytoscape.js runs in the browser. A family larger than a few hundred BANs becomes a hairball. `MAX_NODES = 800` refuses those families. For a large community, filter first in DuckDB (one agent, one `address_key`, or WO-touched BANs only), then point the query at that slice.
+| ban | family_id | family_size |
+|---|---|---|
+| BAN1001 | 0 | 4 |
+| BAN2044 | 0 | 4 |
+| BAN3309 | 1 | 1 |
 
-## 6. If a table name differs
+BAN1001 and BAN2044 are in the same family. BAN3309 is a singleton and will not appear in the dropdown (`family_size` must be 2–800).
 
-Edit the SQL inside `load_family_options`, `family_elements`, and `ban_lineage`. Keep the same columns: `family_id`, `ban`, `from_ban`, `to_ban`, `wo_amt`, `path_type`.
+**Required — `t_edges` (default `transfer_edge`)**  
+One row per line move.
 
-## 7. Optional next controls
+| from_ban | to_ban | ctn |
+|---|---|---|
+| BAN1001 | BAN2044 | 2145550101 |
+| BAN1001 | BAN5520 | 4695550144 |
+| BAN0882 | BAN2044 | 2145550188 |
 
-Once this runs, add another dropdown for `community_id` from `ban_community`, or a checklist for `path_type`. Keep those filters in SQL and return a Polars frame. Do not build a second in-memory NetworkX copy unless you are exporting GEXF for Gephi.
+Those three edges are what the canvas draws as arrows.
+
+**Optional — `t_centrality` (default `ban_centrality`)**
+
+| ban | in_degree | out_degree | eq_wo_amt_current |
+|---|---|---|---|
+| BAN2044 | 2 | 0 | 1268.14 |
+| BAN1001 | 0 | 2 | 0.00 |
+| BAN0882 | 0 | 1 | 0.00 |
+
+BAN2044 is red and larger because of write-off dollars. Missing table → all nodes grey, degrees 0.
+
+**Optional — `t_lineage` (default `wo_lineage`)**
+
+| installment_id | ctn | path_type | eq_type | orig_dt | wo_dt | wo_amt | originated_ban | chargeoff_ban | hop_count | window |
+|---|---|---|---|---|---|---|---|---|---|---|
+| EIP88101 | 2145550101 | moved_eip | PHONE | 2024-12-20 | 2025-11-02 | 870.14 | BAN1001 | BAN2044 | 1 | current_12m |
+| EIP88102 | 2145550101 | new_eip_after_transfer | WATCH | 2025-04-01 | 2025-11-02 | 398.00 | BAN2044 | BAN2044 | 1 | current_12m |
+| EIP77011 | 5125550199 | singleton | PHONE | 2023-06-01 | 2025-08-14 | 210.00 | BAN3309 | BAN3309 | 0 | prior_12m |
+
+Click BAN2044 → first two rows. `window = current_12m` is what sizes/colors nodes and ranks the family dropdown.
+
+## Still Polars-only
+
+DuckDB results go through Arrow into Polars. The click table uses `to_dicts()`. There is no pandas import.
